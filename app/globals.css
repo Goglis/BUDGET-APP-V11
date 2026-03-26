@@ -1,0 +1,23 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --bg: #0f1419;
+  --card: #1a2332;
+  --border: #2d3a4f;
+  --text: #e8eef7;
+  --muted: #8b9cb3;
+}
+
+body {
+  color: var(--text);
+  background: linear-gradient(165deg, #0f1419 0%, #151d2e 45%, #0f1419 100%);
+  min-height: 100dvh;
+}
+
+@layer utilities {
+  .card-surface {
+    @apply rounded-2xl border border-[var(--border)] bg-[var(--card)]/90 shadow-lg backdrop-blur-sm;
+  }
+}
