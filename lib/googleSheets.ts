@@ -17,12 +17,15 @@ export function getSheetsClient() {
   if (!email || !sheetId) {
     throw new Error("GOOGLE_SERVICE_ACCOUNT_EMAIL veya GOOGLE_SHEET_ID eksik");
   }
-  const auth = new google.auth.JWT({
-    email,
-    key: getPrivateKey(),
-    scopes: ["https://www.googleapis.com/auth/spreadsheets"],
-  });
-  return { sheets: google.sheets({ version: "v4", auth }), sheetId };
+const auth = new google.auth.GoogleAuth({
+  credentials: {
+    client_email: email,
+    private_key: getPrivateKey(),
+  },
+  scopes: ["https://www.googleapis.com/auth/spreadsheets"],
+});
+ return { sheets: google.sheets({ version: "v4", auth }), sheetId };
+
 }
 
 export async function readAllData() {
