@@ -3,6 +3,7 @@
 import {
   Camera,
   Car,
+  Eraser,
   FileUp,
   List,
   Loader2,
@@ -28,7 +29,7 @@ import {
 import { useSheetData } from "@/hooks/useSheetData";
 import { SummaryChart } from "@/components/SummaryChart";
 import type { GelirRow, OzelRow, UberRow } from "@/lib/types";
-import type { ParsedUberLine } from "@/lib/uberPdfParser";
+import type { UberPdfOzet } from "@/lib/uberPdfParser";
 
 type Panel = "ozet" | "gelir" | "gider" | "pdf" | "liste";
 
@@ -59,7 +60,9 @@ export function BudgetDashboard() {
 
   const [pdfUberSoru, setPdfUberSoru] = useState<"E" | "H">("E");
   const [pdfBusy, setPdfBusy] = useState(false);
-  const [pdfLines, setPdfLines] = useState<ParsedUberLine[]>([]);
+  const [pdfOzet, setPdfOzet] = useState<UberPdfOzet | null>(null);
+  const [pdfGelirStr, setPdfGelirStr] = useState("");
+  const [pdfGiderStr, setPdfGiderStr] = useState("");
   const [pdfTarih, setPdfTarih] = useState(() =>
     new Date().toISOString().slice(0, 10)
   );
@@ -85,6 +88,30 @@ export function BudgetDashboard() {
   useEffect(() => {
     refresh();
   }, [refresh]);
+
+  const temizleHersey = useCallback(async () => {
+    await resumeAudio();
+    playTap();
+    setError(null);
+    setGelirTutar("");
+    setGelirAciklama("");
+    setGiderTutar("");
+    setGiderAciklama("");
+    setOcrBusy(false);
+    setOcrText("");
+    setFisTutar("");
+    setFisUber("H");
+    setFisKategori("Ev");
+    setPdfOzet(null);
+    setPdfGelirStr("");
+    setPdfGiderStr("");
+    setPdfUberSoru("E");
+    const t = new Date().toISOString().slice(0, 10);
+    setGelirTarih(t);
+    setGiderTarih(t);
+    setFisTarih(t);
+    setPdfTarih(t);
+  }, [setError]);
 
   const postJson = async (url: string, body: object) => {
     const r = await fetch(url, {
@@ -251,7 +278,9 @@ export function BudgetDashboard() {
     await resumeAudio();
     playTap();
     setPdfBusy(true);
-    setPdfLines([]);
+    setPdfOzet(null);
+    setPdfGelirStr("");
+    setPdfGiderStr("");
     setError(null);
     try {
       const fd = new FormData();
@@ -259,9 +288,20 @@ export function BudgetDashboard() {
       const r = await fetch("/api/pdf/uber", { method: "POST", body: fd });
       const j = await r.json();
       if (!r.ok) throw new Error(j.error ?? "PDF okunamadı");
-      setPdfLines(j.lines ?? []);
-      if ((j.lines ?? []).length === 0) playWarn();
-      else playSuccess();
+      const ozet = j.ozet as UberPdfOzet | undefined;
+      if (!ozet) throw new Error("Özet verisi yok");
+      setPdfOzet(ozet);
+      const fmt = (n: number) =>
+        n > 0
+          ? n.toLocaleString("tr-TR", {
+              minimumFractionDigits: 2,
+              maximumFractionDigits: 2,
+            })
+          : "";
+      setPdfGelirStr(fmt(ozet.gelirToplam));
+      setPdfGiderStr(fmt(ozet.giderToplam));
+      if (ozet.gelirToplam + ozet.giderToplam > 0) playSuccess();
+      else playWarn();
     } catch (e) {
       playWarn();
       setError(e instanceof Error ? e.message : "PDF hatası");
@@ -272,29 +312,51 @@ export function BudgetDashboard() {
 
   const pdfUberIsareti = pdfUberSoru === "E" ? "E" : "H";
 
-  const kaydetPdfSatirlari = async () => {
+  const parseTrMoney = (s: string) => {
+    const t = s.trim().replace(/\./g, "").replace(",", ".");
+    const n = parseFloat(t);
+    return Number.isFinite(n) ? n : 0;
+  };
+
+  const kaydetPdfOzet = async () => {
     await resumeAudio();
-    if (pdfLines.length === 0) {
+    const gelir = parseTrMoney(pdfGelirStr);
+    const gider = parseTrMoney(pdfGiderStr);
+    if (gelir <= 0 && gider <= 0) {
       playWarn();
+      setError("En az bir tutar girin (gelir veya gider).");
       return;
     }
     setError(null);
     try {
-      for (const line of pdfLines) {
+      if (gelir > 0) {
         await postJson("/api/sheets", {
           tab: "Uber",
           tarih: pdfTarih,
-          tur: line.tur,
-          tutar: line.tutar,
-          aciklama: line.aciklama.slice(0, 180),
+          tur: "Gelir",
+          tutar: gelir,
+          aciklama: "Uber PDF — gelir özeti",
           kaynak: "pdf",
           uberMasrafi: pdfUberIsareti,
         });
-        if (line.tur === "Gelir") playIncome();
-        else playExpense();
+        playIncome();
+      }
+      if (gider > 0) {
+        await postJson("/api/sheets", {
+          tab: "Uber",
+          tarih: pdfTarih,
+          tur: "Gider",
+          tutar: gider,
+          aciklama: "Uber PDF — gider özeti",
+          kaynak: "pdf",
+          uberMasrafi: pdfUberIsareti,
+        });
+        playExpense();
       }
       playSuccess();
-      setPdfLines([]);
+      setPdfOzet(null);
+      setPdfGelirStr("");
+      setPdfGiderStr("");
       await refresh();
     } catch (e) {
       playWarn();
@@ -667,8 +729,13 @@ export function BudgetDashboard() {
             Uber haftalık PDF
           </h2>
           <p className="text-sm text-[var(--muted)]">
-            PDF yükleyin; metin satırlarından tutarlar kural tabanlı çıkarılır (AI
-            yok). Önce Uber iş kaydı mı işaretleyin.
+            PDF’teki <strong className="text-[var(--text)]">Haftalık Özet</strong> bölümünden
+            yalnızca şu satırlar okunur:{" "}
+            <strong className="text-income">Kazançlarınız</strong>,{" "}
+            <strong className="text-income">Önceki haftalardaki etkinlikler</strong> (gelir),{" "}
+            <strong className="text-expense">Para İadeleri ve Giderler</strong> (gider — siz
+            alırsınız, devlete ödenecek taraf). Başlangıç bakiyesi toplama dahil değil. CA$ / ₺
+            desteklenir.
           </p>
           <p className="text-sm font-medium text-white">Uber iş özeti mi?</p>
           <div className="flex gap-2">
@@ -732,35 +799,93 @@ export function BudgetDashboard() {
               PDF ayrıştırılıyor…
             </div>
           )}
-          {pdfLines.length > 0 && (
-            <>
-              <ul className="max-h-56 space-y-2 overflow-y-auto rounded-xl border border-[var(--border)] bg-[#0f1419] p-3 text-xs">
-                {pdfLines.map((l, i) => (
-                  <li
-                    key={`${l.hamSatir}-${i}`}
-                    className="flex justify-between gap-2 border-b border-[var(--border)]/50 py-2 last:border-0"
-                  >
-                    <span
-                      className={
-                        l.tur === "Gelir" ? "text-income" : "text-expense"
-                      }
-                    >
-                      {l.tur}
-                    </span>
-                    <span className="text-white">
-                      ₺{l.tutar.toLocaleString("tr-TR", { minimumFractionDigits: 2 })}
-                    </span>
-                  </li>
-                ))}
-              </ul>
+          {pdfOzet && (
+            <div className="space-y-3">
+              {pdfOzet.uyari && (
+                <p className="rounded-xl border border-amber-500/40 bg-amber-950/30 px-4 py-3 text-sm text-amber-100">
+                  {pdfOzet.uyari}
+                </p>
+              )}
+              <p className="text-sm font-medium text-white">PDF özeti — düzenleyebilirsiniz</p>
+              <div className="overflow-hidden rounded-xl border border-[var(--border)] bg-[#0f1419]">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="border-b border-[var(--border)] bg-[#151d2e] text-left text-[var(--muted)]">
+                      <th className="px-4 py-3 font-medium">Tür</th>
+                      <th className="px-4 py-3 font-medium">Tutar (₺)</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr className="border-b border-[var(--border)]/80">
+                      <td className="px-4 py-3 font-medium text-income">
+                        <span className="mr-2 inline-block h-2 w-2 rounded-full bg-income align-middle" />
+                        Gelir toplamı
+                      </td>
+                      <td className="px-4 py-2">
+                        <input
+                          inputMode="decimal"
+                          value={pdfGelirStr}
+                          onChange={(e) => setPdfGelirStr(e.target.value)}
+                          placeholder="0,00"
+                          className="w-full rounded-lg border border-income/40 bg-[#0f1419] px-3 py-2 text-white"
+                        />
+                      </td>
+                    </tr>
+                    <tr>
+                      <td className="px-4 py-3 font-medium text-expense">
+                        <span className="mr-2 inline-block h-2 w-2 rounded-full bg-expense align-middle" />
+                        Gider toplamı
+                      </td>
+                      <td className="px-4 py-2">
+                        <input
+                          inputMode="decimal"
+                          value={pdfGiderStr}
+                          onChange={(e) => setPdfGiderStr(e.target.value)}
+                          placeholder="0,00"
+                          className="w-full rounded-lg border border-expense/40 bg-[#0f1419] px-3 py-2 text-white"
+                        />
+                      </td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+              {pdfOzet.kalemler.length > 0 && (
+                <details className="rounded-xl border border-[var(--border)] bg-[#0f1419]/80 p-3 text-xs text-[var(--muted)]">
+                  <summary className="cursor-pointer text-sm font-medium text-[var(--text)]">
+                    PDF’teki özet satırları ({pdfOzet.kalemler.length})
+                  </summary>
+                  <ul className="mt-2 max-h-40 space-y-2 overflow-y-auto">
+                    {pdfOzet.kalemler.map((k, i) => (
+                      <li
+                        key={`${k.aciklama}-${i}`}
+                        className="flex justify-between gap-2 border-b border-[var(--border)]/40 pb-2 last:border-0"
+                      >
+                        <span
+                          className={
+                            k.tur === "Gelir" ? "text-income shrink-0" : "text-expense shrink-0"
+                          }
+                        >
+                          {k.tur}
+                        </span>
+                        <span className="text-right text-white">
+                          ₺
+                          {k.tutar.toLocaleString("tr-TR", {
+                            minimumFractionDigits: 2,
+                          })}
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+                </details>
+              )}
               <button
                 type="button"
-                onClick={kaydetPdfSatirlari}
+                onClick={kaydetPdfOzet}
                 className="w-full rounded-xl bg-amber-600 py-4 font-semibold text-white"
               >
-                Tüm satırları Uber sayfasına yaz
+                Toplamları Uber sayfasına yaz (en fazla 2 satır)
               </button>
-            </>
+            </div>
           )}
         </section>
       )}

@@ -5,10 +5,54 @@ const UBER_RANGE = "Uber!A2:G";
 const OZEL_RANGE = "Ozel!A2:G";
 const GELIR_RANGE = "Gelir!A2:E";
 
+/**
+ * Vercel'de yanlış yapıştırılmış key OpenSSL hatası verir:
+ * error:1E08010C:DECODER routines::unsupported
+ */
 function getPrivateKey(): string {
-  const k = process.env.GOOGLE_PRIVATE_KEY;
-  if (!k) throw new Error("GOOGLE_PRIVATE_KEY eksik");
-  return k.replace(/\\n/g, "\n");
+  const b64 = process.env.GOOGLE_PRIVATE_KEY_BASE64?.trim();
+  if (b64) {
+    const pem = Buffer.from(b64.replace(/\s/g, ""), "base64").toString("utf8");
+    if (
+      !pem.includes("BEGIN PRIVATE KEY") &&
+      !pem.includes("BEGIN RSA PRIVATE KEY")
+    ) {
+      throw new Error(
+        "GOOGLE_PRIVATE_KEY_BASE64 cozuldu ama gecerli PEM degil"
+      );
+    }
+    return pem.trim();
+  }
+
+  let k = process.env.GOOGLE_PRIVATE_KEY;
+  if (!k?.trim()) {
+    throw new Error(
+      "GOOGLE_PRIVATE_KEY veya GOOGLE_PRIVATE_KEY_BASE64 eksik"
+    );
+  }
+  k = k.trim();
+  if (k.charCodeAt(0) === 0xfeff) k = k.slice(1);
+  if (
+    (k.startsWith('"') && k.endsWith('"')) ||
+    (k.startsWith("'") && k.endsWith("'"))
+  ) {
+    k = k.slice(1, -1);
+  }
+  k = k
+    .replace(/\\r\\n/g, "\n")
+    .replace(/\\n/g, "\n")
+    .replace(/\r\n/g, "\n")
+    .trim();
+
+  if (
+    !k.includes("BEGIN PRIVATE KEY") &&
+    !k.includes("BEGIN RSA PRIVATE KEY")
+  ) {
+    throw new Error(
+      "Private key PEM degil. JSON'daki private_key degerinin tamamini kopyalayin veya GOOGLE_PRIVATE_KEY_BASE64 kullanin."
+    );
+  }
+  return k;
 }
 
 export function getSheetsClient() {
@@ -17,15 +61,12 @@ export function getSheetsClient() {
   if (!email || !sheetId) {
     throw new Error("GOOGLE_SERVICE_ACCOUNT_EMAIL veya GOOGLE_SHEET_ID eksik");
   }
-const auth = new google.auth.GoogleAuth({
-  credentials: {
-    client_email: email,
-    private_key: getPrivateKey(),
-  },
-  scopes: ["https://www.googleapis.com/auth/spreadsheets"],
-});
- return { sheets: google.sheets({ version: "v4", auth }), sheetId };
-
+  const auth = new google.auth.JWT({
+    email,
+    key: getPrivateKey(),
+    scopes: ["https://www.googleapis.com/auth/spreadsheets"],
+  });
+  return { sheets: google.sheets({ version: "v4", auth }), sheetId };
 }
 
 export async function readAllData() {

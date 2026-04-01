@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { parseUberWeeklyPdfText } from "@/lib/uberPdfParser";
+import { summarizeUberWeeklyPdf } from "@/lib/uberPdfParser";
 
 export const runtime = "nodejs";
 
@@ -15,9 +15,9 @@ export async function POST(req: Request) {
     const pdfParse = mod.default ?? mod;
     const data = await pdfParse(buf);
     const text = typeof data.text === "string" ? data.text : "";
-    const lines = parseUberWeeklyPdfText(text);
+    const ozet = summarizeUberWeeklyPdf(text);
     return NextResponse.json({
-      lines,
+      ozet,
       karakterSayisi: text.length,
     });
   } catch (e) {
