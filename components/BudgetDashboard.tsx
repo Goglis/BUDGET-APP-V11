@@ -113,6 +113,16 @@ export function BudgetDashboard() {
     setPdfTarih(t);
   }, [setError]);
 
+  const temizlePdfOzet = useCallback(async () => {
+    await resumeAudio();
+    playTap();
+    setError(null);
+    setPdfOzet(null);
+    setPdfGelirStr("");
+    setPdfGiderStr("");
+    setPdfBusy(false);
+  }, [setError]);
+
   const postJson = async (url: string, body: object) => {
     const r = await fetch(url, {
       method: "POST",
@@ -391,18 +401,29 @@ export function BudgetDashboard() {
             Google E-Tablolar ile senkron
           </p>
         </div>
-        <button
-          type="button"
-          onClick={async () => {
-            await resumeAudio();
-            playTap();
-            await refresh();
-          }}
-          className="rounded-xl border border-[var(--border)] bg-[var(--card)] p-3 text-[var(--muted)] hover:text-white"
-          aria-label="Yenile"
-        >
-          <RefreshCw className={`h-5 w-5 ${loading ? "animate-spin" : ""}`} />
-        </button>
+        <div className="flex shrink-0 items-center gap-2">
+          <button
+            type="button"
+            onClick={temizleHersey}
+            className="flex items-center gap-1.5 rounded-xl border border-[var(--border)] bg-[var(--card)] px-3 py-2 text-xs font-medium text-[var(--muted)] hover:border-red-500/40 hover:text-red-200"
+            title="Tüm formları ve PDF özetini temizle"
+          >
+            <Eraser className="h-4 w-4" />
+            Sıfırla
+          </button>
+          <button
+            type="button"
+            onClick={async () => {
+              await resumeAudio();
+              playTap();
+              await refresh();
+            }}
+            className="rounded-xl border border-[var(--border)] bg-[var(--card)] p-3 text-[var(--muted)] hover:text-white"
+            aria-label="Yenile"
+          >
+            <RefreshCw className={`h-5 w-5 ${loading ? "animate-spin" : ""}`} />
+          </button>
+        </div>
       </header>
 
       {error && (
@@ -724,10 +745,20 @@ export function BudgetDashboard() {
 
       {panel === "pdf" && (
         <section className="card-surface space-y-4 p-5">
-          <h2 className="flex items-center gap-2 text-lg font-semibold text-amber-300">
-            <Car className="h-6 w-6" />
-            Uber haftalık PDF
-          </h2>
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <h2 className="flex items-center gap-2 text-lg font-semibold text-amber-300">
+              <Car className="h-6 w-6" />
+              Uber haftalık PDF
+            </h2>
+            <button
+              type="button"
+              onClick={temizlePdfOzet}
+              className="flex items-center gap-1.5 rounded-lg border border-[var(--border)] px-3 py-2 text-xs font-medium text-[var(--muted)] hover:border-amber-500/50 hover:text-amber-200"
+            >
+              <Eraser className="h-3.5 w-3.5" />
+              Özeti sıfırla
+            </button>
+          </div>
           <p className="text-sm text-[var(--muted)]">
             PDF’teki <strong className="text-[var(--text)]">Haftalık Özet</strong> bölümünden
             yalnızca şu satırlar okunur:{" "}
@@ -812,7 +843,7 @@ export function BudgetDashboard() {
                   <thead>
                     <tr className="border-b border-[var(--border)] bg-[#151d2e] text-left text-[var(--muted)]">
                       <th className="px-4 py-3 font-medium">Tür</th>
-                      <th className="px-4 py-3 font-medium">Tutar (₺)</th>
+                      <th className="px-4 py-3 font-medium">Tutar (₺ / CA$)</th>
                     </tr>
                   </thead>
                   <tbody>

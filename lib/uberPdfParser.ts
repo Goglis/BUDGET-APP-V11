@@ -45,8 +45,9 @@ const OZET_SATIR_TANIMLARI: {
     id: "paraIadeGider",
     kisaAd: "Para İadeleri ve Giderler",
     tur: "Gider",
+    /** Gevşek eşleşme kaldırıldı. \u0130 = Türkçe İ (PDF metninde sık). */
     patterns: [
-      /para\s*.{0,12}adeleri\s*.{0,12}giderler/i,
+      /para\s+(?:\u0130|I|i|ı|İ)\s*adeleri\s+ve\s+giderler/i,
       /refunds?\s+and\s+expenses/i,
     ],
   },
@@ -111,14 +112,47 @@ function parseMoney(s: string): number | null {
   return null;
 }
 
-function amountFromWindow(parts: string[]): number | null {
-  const joined = parts.filter(Boolean).join(" ");
-  let m = parseMoney(joined);
-  if (m != null && m !== 0) return Math.abs(m);
-  for (const p of parts) {
-    if (!p) continue;
-    m = parseMoney(p);
-    if (m != null && m !== 0) return Math.abs(m);
+/** Etiket eşleştikten sonra yalnızca aynı satırın geri kalanından tutar (yanlış ilk eşleşmeyi önler). */
+function tutarEtiketSonrasi(block: string, patterns: RegExp[]): number | null {
+  for (const re of patterns) {
+    const m = re.exec(block);
+    if (!m || m.index === undefined) continue;
+    const tail = block.slice(m.index + m[0].length);
+    const v = parseMoney(tail);
+    if (v != null && v !== 0) return Math.abs(v);
+  }
+  return null;
+}
+
+function tekOzetiBul(
+  sectionLines: string[],
+  tanim: (typeof OZET_SATIR_TANIMLARI)[0]
+): UberOzetKalem | null {
+  const n = sectionLines.length;
+  for (let i = 0; i < n; i++) {
+    const L0 = sectionLines[i] ?? "";
+    const L1 = sectionLines[i + 1] ?? "";
+    const ikiSatir = `${L0} ${L1}`.trim();
+
+    const matchedBlock = tanim.patterns.some((re) => re.test(L0))
+      ? L0
+      : tanim.patterns.some((re) => re.test(ikiSatir))
+        ? ikiSatir
+        : null;
+    if (!matchedBlock) continue;
+
+    let tutar = tutarEtiketSonrasi(matchedBlock, tanim.patterns);
+    if (tutar == null && L1.trim() !== "") {
+      tutar = parseMoney(L1);
+      if (tutar != null) tutar = Math.abs(tutar);
+    }
+    if (tutar != null && tutar > 0) {
+      return {
+        tur: tanim.tur,
+        tutar,
+        aciklama: tanim.kisaAd,
+      };
+    }
   }
   return null;
 }
@@ -138,34 +172,10 @@ function haftalikOzetSatirlari(lines: string[]): string[] {
 
 function cikarHaftalikOzetKalemleri(sectionLines: string[]): UberOzetKalem[] {
   const kalemler: UberOzetKalem[] = [];
-  const bulundu = new Set<string>();
-  const n = sectionLines.length;
-
-  for (let i = 0; i < n; i++) {
-    const p = [
-      sectionLines[i] ?? "",
-      sectionLines[i + 1] ?? "",
-      sectionLines[i + 2] ?? "",
-    ];
-    const birlesik = p.filter(Boolean).join(" ");
-
-    for (const tanim of OZET_SATIR_TANIMLARI) {
-      if (bulundu.has(tanim.id)) continue;
-      if (!tanim.patterns.some((re) => re.test(birlesik))) continue;
-
-      const tutar = amountFromWindow(p);
-      if (tutar == null) continue;
-
-      bulundu.add(tanim.id);
-      kalemler.push({
-        tur: tanim.tur,
-        tutar,
-        aciklama: tanim.kisaAd,
-      });
-      break;
-    }
+  for (const tanim of OZET_SATIR_TANIMLARI) {
+    const k = tekOzetiBul(sectionLines, tanim);
+    if (k) kalemler.push(k);
   }
-
   return kalemler;
 }
 
