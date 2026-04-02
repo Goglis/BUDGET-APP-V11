@@ -92,7 +92,21 @@ export function BudgetDashboard() {
   const temizleHersey = useCallback(async () => {
     await resumeAudio();
     playTap();
+    const msg =
+      "Uber, Özel ve Gelir sayfalarındaki TÜM kayıtlar Google e-tablodan silinecek. Bu işlem geri alınamaz. Devam?";
+    if (typeof window !== "undefined" && !window.confirm(msg)) {
+      return;
+    }
     setError(null);
+    try {
+      const r = await fetch("/api/sheets/clear", { method: "POST" });
+      const j = await r.json();
+      if (!r.ok) throw new Error(j.error ?? "Tablo temizlenemedi");
+    } catch (e) {
+      playWarn();
+      setError(e instanceof Error ? e.message : "Temizleme hatası");
+      return;
+    }
     setGelirTutar("");
     setGelirAciklama("");
     setGiderTutar("");
@@ -111,7 +125,9 @@ export function BudgetDashboard() {
     setGiderTarih(t);
     setFisTarih(t);
     setPdfTarih(t);
-  }, [setError]);
+    playSuccess();
+    await refresh();
+  }, [setError, refresh]);
 
   const temizlePdfOzet = useCallback(async () => {
     await resumeAudio();
@@ -838,6 +854,12 @@ export function BudgetDashboard() {
                 </p>
               )}
               <p className="text-sm font-medium text-white">PDF özeti — düzenleyebilirsiniz</p>
+              {pdfOzet.tarihAraligi && (
+                <div className="rounded-xl border border-amber-500/35 bg-amber-950/25 px-4 py-3 text-sm">
+                  <span className="text-[var(--muted)]">Ekstre dönemi: </span>
+                  <span className="font-medium text-amber-100">{pdfOzet.tarihAraligi}</span>
+                </div>
+              )}
               <div className="overflow-hidden rounded-xl border border-[var(--border)] bg-[#0f1419]">
                 <table className="w-full text-sm">
                   <thead>
@@ -848,9 +870,11 @@ export function BudgetDashboard() {
                   </thead>
                   <tbody>
                     <tr className="border-b border-[var(--border)]/80">
-                      <td className="px-4 py-3 font-medium text-income">
-                        <span className="mr-2 inline-block h-2 w-2 rounded-full bg-income align-middle" />
-                        Gelir toplamı
+                      <td className="px-4 py-3 font-medium">
+                        <span className="inline-flex items-center gap-2 text-emerald-400">
+                          <span className="h-2.5 w-2.5 shrink-0 rounded-full bg-emerald-500 shadow-[0_0_8px_rgba(34,197,94,0.8)]" />
+                          Gelir toplamı
+                        </span>
                       </td>
                       <td className="px-4 py-2">
                         <input
@@ -863,9 +887,11 @@ export function BudgetDashboard() {
                       </td>
                     </tr>
                     <tr>
-                      <td className="px-4 py-3 font-medium text-expense">
-                        <span className="mr-2 inline-block h-2 w-2 rounded-full bg-expense align-middle" />
-                        Gider toplamı
+                      <td className="px-4 py-3 font-medium">
+                        <span className="inline-flex items-center gap-2 text-red-400">
+                          <span className="h-2.5 w-2.5 shrink-0 rounded-full bg-red-500 shadow-[0_0_8px_rgba(239,68,68,0.8)]" />
+                          Gider toplamı
+                        </span>
                       </td>
                       <td className="px-4 py-2">
                         <input
@@ -893,9 +919,18 @@ export function BudgetDashboard() {
                       >
                         <span
                           className={
-                            k.tur === "Gelir" ? "text-income shrink-0" : "text-expense shrink-0"
+                            k.tur === "Gelir"
+                              ? "inline-flex shrink-0 items-center gap-1.5 text-emerald-400"
+                              : "inline-flex shrink-0 items-center gap-1.5 text-red-400"
                           }
                         >
+                          <span
+                            className={
+                              k.tur === "Gelir"
+                                ? "h-2 w-2 rounded-full bg-emerald-500"
+                                : "h-2 w-2 rounded-full bg-red-500"
+                            }
+                          />
                           {k.tur}
                         </span>
                         <span className="text-right text-white">
@@ -1003,14 +1038,25 @@ function UberList({
         {[...rows].reverse().map((r) => (
           <li
             key={r.id}
-            className="flex items-center justify-between gap-2 rounded-xl border border-[var(--border)] bg-[#0f1419]/80 px-3 py-2"
+            className={`flex items-center justify-between gap-2 rounded-xl border px-3 py-2 ${
+              r.tur === "Gelir"
+                ? "border-emerald-600/40 bg-emerald-950/25"
+                : "border-red-600/40 bg-red-950/20"
+            }`}
           >
             <div>
               <span
-                className={
-                  r.tur === "Gelir" ? "text-income font-medium" : "text-expense font-medium"
-                }
+                className={`inline-flex items-center gap-2 font-semibold ${
+                  r.tur === "Gelir" ? "text-emerald-400" : "text-red-400"
+                }`}
               >
+                <span
+                  className={
+                    r.tur === "Gelir"
+                      ? "h-2.5 w-2.5 rounded-full bg-emerald-500"
+                      : "h-2.5 w-2.5 rounded-full bg-red-500"
+                  }
+                />
                 {r.tur}
               </span>
               <span className="text-[var(--muted)]"> · {r.tarih}</span>
@@ -1054,10 +1100,13 @@ function OzelList({
         {[...rows].reverse().map((r) => (
           <li
             key={r.id}
-            className="flex items-center justify-between gap-2 rounded-xl border border-[var(--border)] bg-[#0f1419]/80 px-3 py-2"
+            className="flex items-center justify-between gap-2 rounded-xl border border-red-600/40 bg-red-950/20 px-3 py-2"
           >
             <div>
-              <span className="text-expense font-medium">{r.kategori}</span>
+              <span className="inline-flex items-center gap-2 font-semibold text-red-400">
+                <span className="h-2.5 w-2.5 rounded-full bg-red-500" />
+                Gider · {r.kategori}
+              </span>
               <span className="text-[var(--muted)]"> · {r.tarih}</span>
               <p className="text-white">
                 ₺{r.tutar.toLocaleString("tr-TR", { minimumFractionDigits: 2 })}
@@ -1098,10 +1147,13 @@ function GelirList({
         {[...rows].reverse().map((r) => (
           <li
             key={r.id}
-            className="flex items-center justify-between gap-2 rounded-xl border border-[var(--border)] bg-[#0f1419]/80 px-3 py-2"
+            className="flex items-center justify-between gap-2 rounded-xl border border-emerald-600/40 bg-emerald-950/25 px-3 py-2"
           >
             <div>
-              <span className="text-income font-medium">Gelir</span>
+              <span className="inline-flex items-center gap-2 font-semibold text-emerald-400">
+                <span className="h-2.5 w-2.5 rounded-full bg-emerald-500" />
+                Gelir
+              </span>
               <span className="text-[var(--muted)]"> · {r.tarih}</span>
               <p className="text-white">
                 ₺{r.tutar.toLocaleString("tr-TR", { minimumFractionDigits: 2 })}{" "}

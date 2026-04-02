@@ -18,6 +18,62 @@ export interface UberPdfOzet {
   giderToplam: number;
   kalemler: UberOzetKalem[];
   uyari?: string;
+  /** PDF üst kısmındaki ekstre tarih aralığı (okunaklı metin) */
+  tarihAraligi?: string;
+}
+
+const TR_AYLAR =
+  "Ocak|Şubat|Mart|Nisan|Mayıs|Haziran|Temmuz|Ağustos|Eylül|Ekim|Kasım|Aralık";
+
+/**
+ * Uber ekstre PDF'inden haftalık tarih aralığını çıkarır (AI yok).
+ */
+export function extractUberPdfDateRange(fullText: string): string | null {
+  const t = fullText.replace(/\s+/g, " ").slice(0, 12000);
+
+  const trUzun = new RegExp(
+    `(\\d{1,2})\\s+(${TR_AYLAR})\\s+(\\d{4})\\s*[-–—]\\s*(\\d{1,2})\\s+(${TR_AYLAR})\\s+(\\d{4})`,
+    "i"
+  );
+  const mTr = t.match(trUzun);
+  if (mTr) {
+    return `${mTr[1]} ${mTr[2]} ${mTr[3]} – ${mTr[4]} ${mTr[5]} ${mTr[6]}`;
+  }
+
+  const trGunHafta = new RegExp(
+    `(\\d{1,2})\\s+(${TR_AYLAR})\\s+\\S+\\s+(\\d{4})\\s*[-–—]\\s*(\\d{1,2})\\s+(${TR_AYLAR})\\s+\\S+\\s+(\\d{4})`,
+    "i"
+  );
+  const mTr2 = t.match(trGunHafta);
+  if (mTr2) {
+    return `${mTr2[1]} ${mTr2[2]} ${mTr2[3]} – ${mTr2[4]} ${mTr2[5]} ${mTr2[6]}`;
+  }
+
+  const dmy = t.match(
+    /(\d{1,2})[./](\d{1,2})[./](\d{4})\s*[-–—]\s*(\d{1,2})[./](\d{1,2})[./](\d{4})/
+  );
+  if (dmy) {
+    return `${dmy[1]}.${dmy[2]}.${dmy[3]} – ${dmy[4]}.${dmy[5]}.${dmy[6]}`;
+  }
+
+  const enAy =
+    "January|February|March|April|May|June|July|August|September|October|November|December";
+  const mEn = new RegExp(
+    `(${enAy})\\s+(\\d{1,2}),?\\s+(\\d{4})\\s*[-–—]\\s*(${enAy})\\s+(\\d{1,2}),?\\s+(\\d{4})`,
+    "i"
+  ).exec(t);
+  if (mEn) {
+    return `${mEn[1]} ${mEn[2]}, ${mEn[3]} – ${mEn[4]} ${mEn[5]}, ${mEn[6]}`;
+  }
+
+  const kisa = t.match(
+    /(\d{1,2})\s+(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\.?\s+(\d{4})\s*[-–—]\s*(\d{1,2})\s+(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\.?\s+(\d{4})/i
+  );
+  if (kisa) {
+    return `${kisa[1]} ${kisa[2]} ${kisa[3]} – ${kisa[4]} ${kisa[5]} ${kisa[6]}`;
+  }
+
+  return null;
 }
 
 const INCOME_KEYS =
@@ -205,7 +261,9 @@ export function summarizeUberWeeklyPdf(fullText: string): UberPdfOzet {
     uyari = `Bazı özet satırları okunamadı: ${eksik.join(", ")}. Eksik tutarı tablodan ekleyin.`;
   }
 
-  return { gelirToplam, giderToplam, kalemler, uyari };
+  const tarihAraligi = extractUberPdfDateRange(fullText) ?? undefined;
+
+  return { gelirToplam, giderToplam, kalemler, uyari, tarihAraligi };
 }
 
 function lineIntent(line: string): FlowType | null {

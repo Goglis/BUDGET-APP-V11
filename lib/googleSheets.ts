@@ -100,6 +100,21 @@ export async function appendRow(tab: SheetTab, values: (string | number)[]) {
   });
 }
 
+/** Başlık satırı (1. satır) kalır; tüm veri satırlarını siler. */
+export async function clearAllDataRows() {
+  const { sheets, sheetId } = getSheetsClient();
+  await sheets.spreadsheets.values.batchClear({
+    spreadsheetId: sheetId,
+    requestBody: {
+      ranges: [
+        "Uber!A2:G5000",
+        "Ozel!A2:G5000",
+        "Gelir!A2:E5000",
+      ],
+    },
+  });
+}
+
 export async function deleteRowById(tab: SheetTab, id: string) {
   const { sheets, sheetId } = getSheetsClient();
   const meta = await sheets.spreadsheets.get({
